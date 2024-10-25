@@ -27,6 +27,78 @@ import numpy as np
 import math
 from datetime import datetime
 
+def rotx(theta):
+    return np.array([[1, 0, 0],
+                     [0, np.cos(theta), -np.sin(theta)],
+                     [0, np.sin(theta), np.cos(theta)]])
+
+def roty(theta):
+    return np.array([[np.cos(theta), 0, np.sin(theta)],
+                     [0, 1, 0],
+                     [-np.sin(theta), 0, np.cos(theta)]])
+
+def rotz(theta):
+    return np.array([[np.cos(theta), -np.sin(theta), 0],
+                     [np.sin(theta), np.cos(theta), 0],
+                     [0, 0, 1]])
+
+def rotation_matrix_to_euler_angles(rot_matrix):
+    """
+    Chuyển đổi từ ma trận xoay 3x3 thành giá trị Euler (Roll, Pitch, Yaw)
+    Ma trận xoay phải thỏa mãn điều kiện SO(3): det(R) = 1 và R.T * R = I
+    """
+    sy = math.sqrt(rot_matrix[0, 0] * rot_matrix[0, 0] + rot_matrix[1, 0] * rot_matrix[1, 0])
+
+    singular = sy < 1e-6  # Kiểm tra xem ma trận có gần singular không
+
+    if not singular:
+        roll = math.atan2(rot_matrix[2, 1], rot_matrix[2, 2])
+        pitch = math.atan2(-rot_matrix[2, 0], sy)
+        yaw = math.atan2(rot_matrix[1, 0], rot_matrix[0, 0])
+    else:
+        roll = math.atan2(-rot_matrix[1, 2], rot_matrix[1, 1])
+        pitch = math.atan2(-rot_matrix[2, 0], sy)
+        yaw = 0
+
+    return np.array([roll, pitch, yaw])  # Trả về Roll, Pitch, Yaw dưới dạng numpy array
+
+def plot_ref_axis(Rx, Ry, Rz, link_pos):
+        # Chuyển quaternion thành ma trận xoay
+    axis_length = 0.1
+    # link_pos = link_state[4]  # Lấy vị trí của link
+    rot_matrix = rotz(Rz) @ roty(Ry) @ rotx(Rx)
+    rot_matrix = np.array([[rot_matrix[0, 0],rot_matrix[0, 1], rot_matrix[0, 2]], 
+                   [rot_matrix[1, 0],rot_matrix[1, 1], rot_matrix[1, 2]], 
+                   [rot_matrix[2, 0],rot_matrix[2, 1], rot_matrix[2, 2]]])
+
+    x_axis = rot_matrix[:,0]
+    y_axis = rot_matrix[:,1]
+    z_axis = rot_matrix[:,2]
+
+    # Xóa các đường debug cũ nếu cần thiết (để không bị lặp lại các đường không mong muốn)
+    # p.removeAllUserDebugItems()
+
+    # Vẽ lại trục X
+    p.addUserDebugLine(link_pos, 
+                        [link_pos[0] + axis_length * x_axis[0],
+                        link_pos[1] + axis_length * x_axis[1],
+                        link_pos[2] + axis_length * x_axis[2]],
+                        [1, 0, 0], lineWidth=2)
+    
+    # Vẽ lại trục Y
+    p.addUserDebugLine(link_pos, 
+                        [link_pos[0] + axis_length * y_axis[0],
+                        link_pos[1] + axis_length * y_axis[1],
+                        link_pos[2] + axis_length * y_axis[2]],
+                        [0, 1, 0], lineWidth=2)
+    
+    # Vẽ lại trục Z
+    p.addUserDebugLine(link_pos, 
+                        [link_pos[0] + axis_length * z_axis[0],
+                        link_pos[1] + axis_length * z_axis[1],
+                        link_pos[2] + axis_length * z_axis[2]],
+                        [0, 0, 1], lineWidth=2)
+    
 def plot_axis(robot_id, joint_index):
     axis_length = 0.1
     link_state = p.getLinkState(robot_id, joint_index)
@@ -35,11 +107,18 @@ def plot_axis(robot_id, joint_index):
 
     # Chuyển quaternion thành ma trận xoay
     rot_matrix = p.getMatrixFromQuaternion(link_orientation)
-
-    # Lấy các vector X, Y, Z của hệ trục
-    x_axis = [rot_matrix[0], rot_matrix[3], rot_matrix[6]]
-    y_axis = [rot_matrix[1], rot_matrix[4], rot_matrix[7]]
-    z_axis = [rot_matrix[2], rot_matrix[5], rot_matrix[8]]
+    rot_matrix = np.array([[rot_matrix[0],rot_matrix[1], rot_matrix[2]], 
+                   [rot_matrix[3],rot_matrix[4], rot_matrix[5]], 
+                   [rot_matrix[6],rot_matrix[7], rot_matrix[8]]])
+    
+    flip_matrix = np.array([[-1, 0, 0],
+                                [0, 1, 0],
+                                [0, 0, -1]])
+    
+    rot_matrix = np.dot(rot_matrix, flip_matrix)
+    x_axis = rot_matrix[:,0]
+    y_axis = rot_matrix[:,1]
+    z_axis = rot_matrix[:,2]
 
     # Xóa các đường debug cũ nếu cần thiết (để không bị lặp lại các đường không mong muốn)
     p.removeAllUserDebugItems()
@@ -64,7 +143,42 @@ def plot_axis(robot_id, joint_index):
                         link_pos[1] + axis_length * z_axis[1],
                         link_pos[2] + axis_length * z_axis[2]],
                         [0, 0, 1], lineWidth=2)
+    return rot_matrix
 
+def Set_joint_position(theta_v_fanuc, theta_v_sixdof):
+    p.setJointMotorControl2(bodyUniqueId=Robot_1,
+                        jointIndex=0,
+                        controlMode=p.POSITION_CONTROL,
+                        targetPosition= theta_v_sixdof[0],
+                        force = 500)  # Giới hạn lực
+    p.setJointMotorControl2(bodyUniqueId=Robot_1,
+                        jointIndex=1,
+                        controlMode=p.POSITION_CONTROL,
+                        targetPosition= theta_v_sixdof[1],
+                        force = 500)  # Giới hạn lực
+    p.setJointMotorControl2(bodyUniqueId=Robot_1,
+                    jointIndex=2,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPosition= theta_v_sixdof[2],
+                    force = 500)  # Giới hạn lực
+    p.setJointMotorControl2(bodyUniqueId=Robot_1,
+                jointIndex=3,
+                controlMode=p.POSITION_CONTROL,
+                targetPosition= -theta_v_sixdof[3],
+                force = 500)  # Giới hạn lực
+    
+    p.setJointMotorControl2(bodyUniqueId=Robot_1,
+                jointIndex=4,
+                controlMode=p.POSITION_CONTROL,
+                targetPosition= -theta_v_sixdof[4],
+                force = 500)  # Giới hạn lực
+    
+    p.setJointMotorControl2(bodyUniqueId=Robot_1,
+                jointIndex=5,
+                controlMode=p.POSITION_CONTROL,
+                targetVelocity= theta_v_sixdof[5],
+                force = 500)  # Giới hạn lực
+    
 def Set_joint_velocity(theta_v_fanuc, theta_v_sixdof):
     p.setJointMotorControl2(bodyUniqueId=Robot_1,
                         jointIndex=0,
@@ -261,9 +375,11 @@ while True:
         x_target = 0.4
         y_target = 0
         z_target = 0.3
-        Goal_sixdof_orientation = np.array([ np.pi, 0, 0])
+        Goal_sixdof_orientation = np.array([ 0, np.pi/2, 0])
+        Goal_sixdof_rotation = rotz(Goal_sixdof_orientation[2]) @ roty(Goal_sixdof_orientation[1]) @ rotx(Goal_sixdof_orientation[0])
+        Goal_sixdof_orientation = rotation_matrix_to_euler_angles(Goal_sixdof_rotation)
         v_position_sixdof = 0.1
-        v_orientation_sixdof = 0
+        v_orientation_sixdof = 0.3
     # ---------------------------------- Step 2: Determine errors and Flag_sixdof --------------------------------------
     # ---------------------------------- Step 2: Determine errors and Flag_sixdof --------------------------------------
     # ---------------------------------- Step 2: Determine errors and Flag_sixdof --------------------------------------
@@ -282,13 +398,17 @@ while True:
     # Lấy trạng thái của link trong PyBullet
     quaternion = p.getLinkState(bodyUniqueId=Robot_1, linkIndex=5)[1]
     # Chuyển đổi từ quaternion sang Roll, Pitch, Yaw
-    roll, pitch, yaw = p.getEulerFromQuaternion(quaternion)
+    # roll, pitch, yaw = p.getEulerFromQuaternion(quaternion)
+    rot_matrix = plot_axis(Robot_1, 5)
+    plot_ref_axis(Goal_sixdof_orientation[0], Goal_sixdof_orientation[1], Goal_sixdof_orientation[2],[x_target, y_target, z_target] )
+    roll, pitch, yaw = rotation_matrix_to_euler_angles(rot_matrix)
     att_sixdof_jacobian = T06_sixdof_function_main_2(roll, pitch, yaw, Goal_sixdof_orientation[0], Goal_sixdof_orientation[1], Goal_sixdof_orientation[2])
     # orientation_sixdof = T06_sixdof_function(t6, t7, t8, t9, t10, t11)
     # --------------------------------------- Flag condition and Case_sixdof -------------------------------------------
     # Toi diem lay vat
-    if np.linalg.norm(att_sixdof) < 0.001 and np.abs(att_sixdof_jacobian[0]) < 0.0175 and np.abs(att_sixdof_jacobian[1]) < 0.0175 and np.abs(att_sixdof_jacobian[2]) < 0.0175:
-        Case_sixdof = Case_sixdof + 1
+    # if np.linalg.norm(att_sixdof) < 0.001 and np.abs(att_sixdof_jacobian[0]) < 0.0175 and np.abs(att_sixdof_jacobian[1]) < 0.0175 and np.abs(att_sixdof_jacobian[2]) < 0.0175:
+    #     Case_sixdof = Case_sixdof + 1
+    
 
     if np.linalg.norm(att_sixdof) < 0.005:
         v_position_sixdof = 0.05
@@ -306,6 +426,9 @@ while True:
     else:
         v_att_tool_position_sixdof = -v_position_sixdof * (att_sixdof / np.linalg.norm(att_sixdof))
 
+    if np.abs(att_sixdof_jacobian[0]) < 0.0175 and np.abs(att_sixdof_jacobian[1]) < 0.0175 and np.abs(att_sixdof_jacobian[2]) < 0.0175:
+        v_orientation_sixdof = 0
+
     v_att_tool_orientation_sixdof = v_orientation_sixdof * (att_sixdof_jacobian / np.linalg.norm(att_sixdof_jacobian))
 
     # --------------------------Step 4: Determine theta values and avoid singularity -----------------------------------
@@ -318,19 +441,27 @@ while True:
 
     c_tool = np.hstack((v_att_tool_position_sixdof, v_att_tool_orientation_sixdof))
 
-    if abs(det_sixdof_matrix) < 0.0001:
-        theta_v_tool_sixdof = Jtool_sixdof.T.dot(
-            np.linalg.inv(Jtool_sixdof.dot(Jtool_sixdof.T) + 0.00001 * np.eye(6))).dot(c_tool)
-    else:
-        theta_v_tool_sixdof = np.dot(np.linalg.inv(Jtool_sixdof), c_tool.T)
+    # if abs(det_sixdof_matrix) < 0.0001:
+    #     theta_v_tool_sixdof = Jtool_sixdof.T.dot(
+    #         np.linalg.inv(Jtool_sixdof.dot(Jtool_sixdof.T) + 0.00001 * np.eye(6))).dot(c_tool)
+    # else:
+    #     theta_v_tool_sixdof = np.dot(np.linalg.inv(Jtool_sixdof), c_tool.T)
+    theta_v_tool_sixdof = np.dot(np.linalg.pinv(Jtool_sixdof), c_tool.T)
     
     theta_v_sixdof = theta_v_tool_sixdof
     theta_v_fanuc = [0, 0, 0, 0, 0]
-
+    
     # ----------------------------------------- set joint velocity -----------------------------------------------------
+    # t6, t7, t8, t9, t10, t11 = [0, 0, math.pi/2, 0, 0, 0]
+    
+    # p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 0, targetValue = t6)  
+    # p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 1, targetValue = t7)  
+    # p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 2, targetValue = t8)  
+    # p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 3, targetValue = t9)  
+    # p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 4, targetValue = t10)  
+    # p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 5, targetValue = t11)  
 
     Set_joint_velocity(theta_v_fanuc, theta_v_sixdof)
-
     Capsul_fanuc = Capsuls_fanuc(t1, t2, t3, t4) + Arm_2_matrix
     so_thu_tu = [0, 2, 4, 6, 8]
     q = 0
@@ -344,9 +475,7 @@ while True:
                                         Rad_1[n], Rad_2[m])
             q = q + 1
     # print(Case_sixdof)
-    print('Linear_error', np.linalg.norm(att_sixdof))
-    print()
+    # print('Linear_error', np.linalg.norm(att_sixdof))
+    # print(att_sixdof_jacobian)
     p.resetBasePositionAndOrientation(sphereId, [x_target, y_target, z_target] , [0, 0, 0, 1])
-    # p.stepSimulation()
-    # time.sleep(1./240.)
-    plot_axis(Robot_1, 5)
+    print('v_orientation', v_orientation_sixdof, 'v_linear', v_position_sixdof)
