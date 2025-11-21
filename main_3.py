@@ -237,7 +237,7 @@ physicsClient = p.connect(p.GUI)#or p.DIRECT for non-graphical version
 p.setAdditionalSearchPath(pybullet_data.getDataPath()) #optionally
 p.setGravity(0, 0, -10)
 planeId = p.loadURDF("plane.urdf")
-startPos_1 = [-0.05,0.05,0]
+startPos_1 = [0,0,0]
 startOrientation_1 = p.getQuaternionFromEuler([-np.pi/2,0,0])
 startPos_2 = [1,0,0]
 startOrientation_2 = p.getQuaternionFromEuler([-np.pi/2,0,0])
@@ -272,7 +272,6 @@ p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 3, targetValue = t9)
 p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 4, targetValue = t10)  
 p.resetJointState(bodyUniqueId = Robot_1, jointIndex = 5, targetValue = t11)  
 # jointPoses = p.calculateInverseKinematics(Robot_1,5, pos)
-t = 0
 trailDuration = 15
 hasPrevPose = 1
 pos = p.getLinkState(bodyUniqueId = Robot_1, linkIndex = 5)
@@ -297,12 +296,6 @@ a_3_sixdof = 0.0305
 d_1_sixdof = 0.29
 d_4_sixdof = 0.27
 d_tool_sixdof = 0.09
-
-# ----------------------------------------------------------------------------------------------------------------------
-
-# ------------------------------------------ Khai bao vi tri home real cua robot ---------------------------------------
-
-# ---------------------------------- Khai bao ma tran khoang cach tuong doi giua 2 robot -------------------------------
 
 Arm_2_matrix = np.zeros((8, 3))
 for j in range(8):
@@ -339,7 +332,16 @@ for n in range(4):
         q = q + 1
 
 # ----------------------------------------------------------------------------------------------------------------------
-p.setRealTimeSimulation(1)
+
+# Lấy thời gian bắt đầu
+start_time = time.time()
+Flag_mode_simulation = int(input('0 - real time | 1 - non-real time'))
+
+if Flag_mode_simulation == 0: 
+    p.setRealTimeSimulation(1)
+else: 
+    p.setRealTimeSimulation(0)
+
 while True:
     # Tinh Jancobian -------------------------------------------------------------------------------------------------
 
@@ -371,20 +373,30 @@ while True:
     Jtool_sixdof = Jtool_sixdof_function(t6, t7, t8, t9, t10, t11)
 
     # Toi diem lay vat
+    k = 0.5
+    t = 0
     if Case_sixdof == 1:
-        x_target = 0.4
-        y_target = 0
-        z_target = 0.3
-        Goal_sixdof_orientation = [ np.pi, 0, 0]
-        quaternion_goal = p.getQuaternionFromEuler(Goal_sixdof_orientation)
-        Target_quat = np.zeros(4)
-        Target_quat[0] = quaternion_goal[-1]
-        Target_quat[1:4] = quaternion_goal[0:3]
-        v_position_sixdof = 0.1
-        v_orientation_sixdof = 0.2
-    # ---------------------------------- Step 2: Determine errors and Flag_sixdof --------------------------------------
-    # ---------------------------------- Step 2: Determine errors and Flag_sixdof --------------------------------------
-    # ---------------------------------- Step 2: Determine errors and Flag_sixdof --------------------------------------
+        
+        if Flag_mode_simulation == 0:
+            t = time.time() - start_time
+        else: 
+            t = 1/240 + t
+
+        R = 0.1
+        phi = k*t
+        x_target = R*math.sin(phi) + 0.3
+        y_target = R*math.cos(phi) 
+        z_target = 0.4
+        vx_target = k*R*math.cos(phi)
+        vy_target = -k*R*math.sin(phi)
+        vz_target = 0
+
+        Goal_sixdof_orientation = np.array([ 0, np.pi/2, 0])
+        Goal_sixdof_rotation = rotz(Goal_sixdof_orientation[2]) @ roty(Goal_sixdof_orientation[1]) @ rotx(Goal_sixdof_orientation[0])
+        Goal_sixdof_orientation = rotation_matrix_to_euler_angles(Goal_sixdof_rotation)
+        v_position_sixdof = 100           
+        v_orientation_sixdof = 0
+
     Capsul_sixdof = Capsuls_sixdof(t6, t7, t8, t9, t10)
     Goal_coordinate_sixdof = np.array([x_target, y_target, z_target])
     coordinate_sixdof = Coordinate_sixdof(t6, t7, t8, t9, t10)
@@ -396,49 +408,45 @@ while True:
     att_sixdof = [x, y, z] - Goal_coordinate_sixdof
     # att_sixdof_jacobian = T06_sixdof_function(t6, t7, t8, t9, t10, t11) - Goal_coordinate_sixdof_jacobian
     # Lấy trạng thái của link trong PyBullet
-
+    quaternion = p.getLinkState(bodyUniqueId=Robot_1, linkIndex=5)[1]
+    # Chuyển đổi từ quaternion sang Roll, Pitch, Yaw
+    # roll, pitch, yaw = p.getEulerFromQuaternion(quaternion)
     rot_matrix = plot_axis(Robot_1, 5)
-    Euler_cur = rotation_matrix_to_euler_angles(rot_matrix)
-    quaternion_cur = p.getQuaternionFromEuler(Euler_cur)
-    Init_quat = np.zeros(4)
-    Init_quat[0] = quaternion_cur[-1]
-    Init_quat[1:4] = quaternion_cur[0:3]
     plot_ref_axis(Goal_sixdof_orientation[0], Goal_sixdof_orientation[1], Goal_sixdof_orientation[2],[x_target, y_target, z_target] )
-    
-    att_sixdof_jacobian = T06_sixdof_function_main_2(Init_quat, Target_quat)
-    
-    if np.linalg.norm(att_sixdof) < 0.005:
-        v_position_sixdof = 0.05
-    if np.linalg.norm(att_sixdof) < 0.001:
-        v_position_sixdof = 0
-
+    roll, pitch, yaw = rotation_matrix_to_euler_angles(rot_matrix)
+    att_sixdof_jacobian = T06_sixdof_function_main_2(roll, pitch, yaw, Goal_sixdof_orientation[0], Goal_sixdof_orientation[1], Goal_sixdof_orientation[2])
+    # att_sixdof_jacobian = T06_sixdof_function(roll, pitch, yaw, Goal_sixdof_orientation[0], Goal_sixdof_orientation[1], Goal_sixdof_orientation[2])
     #  ----------------------- V_position and orientation of sixdof--------------------------------------------
     if np.linalg.norm(att_sixdof) < v_position_sixdof * t_sampling:
         v_position_sixdof = np.linalg.norm(att_sixdof) / t_sampling
 
-
-        # ------------------------ V_att_tool_position and orientation of sixdof -----------------------------------
+    v_target = np.array([vx_target, vy_target, vz_target])
     if np.linalg.norm(att_sixdof) < 0.000001:
         v_att_tool_position_sixdof = np.zeros(3)
     else:
-        v_att_tool_position_sixdof = -v_position_sixdof * (att_sixdof / np.linalg.norm(att_sixdof))
+        v_att_tool_position_sixdof = -v_position_sixdof * att_sixdof + v_target
 
-    if np.abs(att_sixdof_jacobian[0]) < 0.001 and np.abs(att_sixdof_jacobian[1]) < 0.001 and np.abs(att_sixdof_jacobian[2]) < 0.001:
+    if np.abs(att_sixdof_jacobian[0]) < 0.0175 and np.abs(att_sixdof_jacobian[1]) < 0.0175 and np.abs(att_sixdof_jacobian[2]) < 0.0175:
         v_orientation_sixdof = 0
 
-    v_att_tool_orientation_sixdof = att_sixdof_jacobian
+    v_att_tool_orientation_sixdof = v_orientation_sixdof * (att_sixdof_jacobian / np.linalg.norm(att_sixdof_jacobian))
 
     det_sixdof_matrix = np.linalg.det(Jtool_sixdof)
     det_sixdof_matrix_3 = np.linalg.det(J04_sixdof)
+    # ----------------------------------- Calculate theta_v_tool_sixdof --------------------------------------------
 
     c_tool = np.hstack((v_att_tool_position_sixdof, v_att_tool_orientation_sixdof))
 
     theta_v_tool_sixdof = np.dot(np.linalg.pinv(Jtool_sixdof), c_tool.T)
-    
     theta_v_sixdof = theta_v_tool_sixdof
     theta_v_fanuc = [0, 0, 0, 0, 0]
-    
+    theta_v_sixdof = np.clip(theta_v_sixdof, -np.pi/5, np.pi/5)
     Set_joint_velocity(theta_v_fanuc, theta_v_sixdof)
+   
+    if Flag_mode_simulation == 0:
+        pass
+    else:
+        p.stepSimulation()  # mỗi bước = 1/240 giây nếu không đổi thời gian step
 
     p.resetBasePositionAndOrientation(sphereId, [x_target, y_target, z_target] , [0, 0, 0, 1])
-    print(att_sixdof_jacobian)
+    # print('v_orientation', v_orientation_sixdof, 'v_linear', v_position_sixdof)

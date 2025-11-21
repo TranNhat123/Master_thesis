@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.5.1-0-g916b5db  Build Version: 1.5.7152.31018
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="URDF_file_2">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-0.0506069949827857 -1.14363572841677E-07 0.0619008362342535"
+        rpy="0 0 0" />
+      <mass
+        value="2.51495850931649" />
+      <inertia
+        ixx="0.0103832756520663"
+        ixy="-1.74262384356617E-09"
+        ixz="0.00157319608739744"
+        iyy="0.0163429942434534"
+        iyz="-1.23204755988797E-08"
+        izz="0.0176888561819906" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="Link_1_sixdof">
+    <inertial>
+      <origin
+        xyz="1.39246435361373E-15 0.138175207287114 -8.4738207703762E-14"
+        rpy="0 0 0" />
+      <mass
+        value="3.9007787242109" />
+      <inertia
+        ixx="0.0276293584237025"
+        ixy="9.7521213598593E-19"
+        ixz="-1.49576433965979E-09"
+        iyy="0.00933971406285462"
+        iyz="8.93245474050774E-15"
+        izz="0.0291792098708082" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_1_sixdof.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_1_sixdof.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_1_sixdof"
+    type="continuous">
+    <origin
+      xyz="0 -0.0499999999999985 0"
+      rpy="0 0 3.14159265358979" />
+    <parent
+      link="base_link" />
+    <child
+      link="Link_1_sixdof" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="Link_2_sixdof">
+    <inertial>
+      <origin
+        xyz="0.129995053676744 -3.21171147454891E-08 -0.00025041386369764"
+        rpy="0 0 0" />
+      <mass
+        value="2.97190444581255" />
+      <inertia
+        ixx="0.0114204057525842"
+        ixy="1.17304404848484E-08"
+        ixz="3.81761314295112E-09"
+        iyy="0.0298998821164193"
+        iyz="2.39017633320791E-11"
+        izz="0.0225536721538333" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_2_sixdof.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_2_sixdof.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_2_sixdof"
+    type="continuous">
+    <origin
+      xyz="0 0.239999999999982 0"
+      rpy="3.14159265358979 0 3.14159265358979" />
+    <parent
+      link="Link_1_sixdof" />
+    <child
+      link="Link_2_sixdof" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="Link_3_sixdof">
+    <inertial>
+      <origin
+        xyz="0.0151091396531827 1.31918981676818E-08 0.00053080184327442"
+        rpy="0 0 0" />
+      <mass
+        value="1.21034790267616" />
+      <inertia
+        ixx="0.00222418673786187"
+        ixy="-2.9841140750966E-11"
+        ixz="-1.64350828599202E-05"
+        iyy="0.00275952209791723"
+        iyz="6.62153778562464E-10"
+        izz="0.00232313783127098" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_3_sixdof.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_3_sixdof.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_3_sixdof"
+    type="continuous">
+    <origin
+      xyz="0.259999999999975 0 0"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="Link_2_sixdof" />
+    <child
+      link="Link_3_sixdof" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="Link_4_sixdof">
+    <inertial>
+      <origin
+        xyz="0.000947263677941901 -0.100717413381797 3.06160884371227E-09"
+        rpy="0 0 0" />
+      <mass
+        value="1.19972958700246" />
+      <inertia
+        ixx="0.00495141922936999"
+        ixy="1.47576253468213E-05"
+        ixz="1.62163685479096E-09"
+        iyy="0.00126268477088943"
+        iyz="-1.89858985382678E-10"
+        izz="0.00490627123657181" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_4_sixdof.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_4_sixdof.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_4_sixdof"
+    type="continuous">
+    <origin
+      xyz="0.0305000000000504 0 0.0500000000000637"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="Link_3_sixdof" />
+    <child
+      link="Link_4_sixdof" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="Link_5_sixdof">
+    <inertial>
+      <origin
+        xyz="-1.67534207741182E-05 -2.95132488265696E-08 0.0214322182561447"
+        rpy="0 0 0" />
+      <mass
+        value="0.27429658836353" />
+      <inertia
+        ixx="0.000286683873066818"
+        ixy="1.95186751032465E-10"
+        ixz="2.78932205905315E-08"
+        iyy="0.000290337676931304"
+        iyz="2.42601818266048E-12"
+        izz="0.000123515546890888" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_5_sixdof.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_5_sixdof.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_5_sixdof"
+    type="continuous">
+    <origin
+      xyz="0 -0.219999999999987 0"
+      rpy="-1.5707963267949 0 3.14159265358979" />
+    <parent
+      link="Link_4_sixdof" />
+    <child
+      link="Link_5_sixdof" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="Link_6_sixdof">
+    <inertial>
+      <origin
+        xyz="-1.52655665885959E-15 5.55111512312578E-17 -0.00750000000000051"
+        rpy="0 0 0" />
+      <mass
+        value="0.0127506773833687" />
+      <inertia
+        ixx="1.71251618939208E-06"
+        ixy="-1.45583787809333E-21"
+        ixz="-2.6758892300575E-21"
+        iyy="1.71251618939207E-06"
+        iyz="1.38809697494579E-20"
+        izz="2.97760528698337E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_6_sixdof.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://URDF_file_2/meshes/Link_6_sixdof.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_6_sixdof"
+    type="continuous">
+    <origin
+      xyz="0 0 0.0749999999999912"
+      rpy="3.14159265358979 0 -1.35772981694107" />
+    <parent
+      link="Link_5_sixdof" />
+    <child
+      link="Link_6_sixdof" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>
