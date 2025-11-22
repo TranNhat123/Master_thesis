@@ -2,12 +2,12 @@ import numpy as np
 
 def Jtool_fanuc_function(t1, t2, t3, t4):
     # Link parameters
-    a_1 = 0.15*1000
-    a_2 = 0.25*1000
-    a_3 = 0.22*1000
+    a_1 = 0.15
+    a_2 = 0.25
+    a_3 = 0.22
     d_2 = 0
     k_1 = 0
-    d_5 = 0.08*1000
+    d_5 = 0.08
 
     # Calculate the elements of the Jacobian matrix
     k11 = (-(a_1 + a_2 * np.cos(t2) + a_3 * np.cos(t2 + t3) + d_5 * np.sin(t2 + t3 + t4))) * np.sin(t1) + (d_2 + k_1) * np.cos(t1)

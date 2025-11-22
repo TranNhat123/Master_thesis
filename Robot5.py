@@ -97,7 +97,6 @@ class Robot_5_Dof:
         # Lấy vị trí tool từ PyBullet
         pos = p.getLinkState(bodyUniqueId=self.robot_id, linkIndex=self.tool_link_index)[0]
         x, y, z = pos
-        x, y, z = x*1000, y*1000, z*1000 # Convert tu m -> mm
         att = np.array([x, y, z]) - goal
 
         # Lưu khoảng cách lớn nhất để chuẩn hóa việc tăng/giảm tốc

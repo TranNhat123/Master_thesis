@@ -72,8 +72,8 @@ class Environment:
         )
 
         # Tham số mô phỏng và điều khiển
-        self.vmax_robot6 = 50
-        self.vmax_robot5 = 50
+        self.vmax_robot6 = 0.05 # (m/s)
+        self.vmax_robot5 = 0.05  # (m/s)
         self.dt = 1.0 / 240.0
 
         # Target mặc định
@@ -91,14 +91,14 @@ class Environment:
     # ------------------ Cài đặt target & mode ------------------ #
 
     def set_target_robot6(self, Px, Py, Pz):
-        self.Px_robot6 = float(Px)
-        self.Py_robot6 = float(Py)
-        self.Pz_robot6 = float(Pz)
+        self.Px_robot6 = float(Px)/1000
+        self.Py_robot6 = float(Py)/1000
+        self.Pz_robot6 = float(Pz)/1000
 
     def set_target_robot5(self, Px, Py, Pz):
-        self.Px_robot5 = float(Px)
-        self.Py_robot5 = float(Py)
-        self.Pz_robot5 = float(Pz)
+        self.Px_robot5 = float(Px)/1000
+        self.Py_robot5 = float(Py)/1000
+        self.Pz_robot5 = float(Pz)/1000
 
     def set_mode(self, flag_mode_simulation):
         """
@@ -168,7 +168,7 @@ class Environment:
         # Cập nhật vị trí quả cầu mục tiêu
         p.resetBasePositionAndOrientation(
             self.sphere_robot6,
-            [self.Px_robot6/1000, self.Py_robot6/1000, self.Pz_robot6/1000],
+            [self.Px_robot6, self.Py_robot6, self.Pz_robot6],
             [0, 0, 0, 1]
         )
         #################################################################################
@@ -199,7 +199,7 @@ class Environment:
         # Cập nhật vị trí quả cầu mục tiêu
         p.resetBasePositionAndOrientation(
             self.sphere_robot5,
-            [self.Px_robot5/1000, self.Py_robot5/1000, self.Pz_robot5/1000],
+            [self.Px_robot5, self.Py_robot5, self.Pz_robot5],
             [0, 0, 0, 1]
         )
         #################################################################################
@@ -218,7 +218,6 @@ class Environment:
         """Vòng lặp vô hạn."""
         while True:
             self.step()
-
 
 if __name__ == "__main__":
     env = Environment(use_gui=True)
