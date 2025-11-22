@@ -1,9 +1,9 @@
 import numpy as np
 
 def Jtool_sixdof_function(t1, t2, t3, t4, t5, t6):
-    a_2 = 0.26
-    a_3 = 0.0305
-    d_4 = 0.27
+    a_2 = 0.26*1000
+    a_3 = 0.0305*1000
+    d_4 = 0.27*1000
     
     k11 = -d_4 * np.sin(t1) * np.cos(t2) * np.sin(t3) - d_4 * np.sin(t1) * np.cos(t3) * np.sin(t2) - a_2 * np.sin(
         t1) * np.cos(t2) - a_3 * np.sin(t1) * np.cos(t2) * np.cos(t3) + a_3 * np.sin(t1) * np.sin(t2) * np.sin(t3)
