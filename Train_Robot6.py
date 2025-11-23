@@ -474,4 +474,5 @@ Resume từ 1 checkpoint cụ thể:
 Mở 1 terminal khác. 
 tensorboard --logdir runs
 Rồi mở trình duyệt vào http://localhost:6006.
+NGH 
 '''
