@@ -15,8 +15,7 @@ from Robot6_SAC import Robot6SacEnv
 import argparse
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
+print(f'Device: {device}')
 class MLP(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=512):
         super().__init__()
@@ -355,6 +354,11 @@ def train_sac(args):
                     writer.add_scalar("loss/policy_loss", policy_loss.item(), global_step)
                     writer.add_scalar("train/alpha", log_alpha.exp().item(), global_step)
 
+                    writer.add_scalar("debug/q1_mean", q1_pred.mean().item(), global_step)
+                    writer.add_scalar("debug/q2_mean", q2_pred.mean().item(), global_step)
+                    writer.add_scalar("debug/q_target_mean", y.mean().item(), global_step)
+                    writer.add_scalar("debug/log_pi_mean", log_pi.mean().item(), global_step)
+
                     # --- Update alpha (entropy temperature) ---
                     alpha_loss = (-log_alpha * (log_pi + target_entropy).detach()).mean()
                     alpha_opt.zero_grad()
@@ -475,4 +479,5 @@ Mở 1 terminal khác.
 tensorboard --logdir runs
 Rồi mở trình duyệt vào http://localhost:6006.
 NGH 
+python 3.10
 '''
