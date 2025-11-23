@@ -32,7 +32,7 @@ class MLP(nn.Module):
 
 
 class GaussianPolicy(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden_dim=512, log_std_min=-20, log_std_max=2):
+    def __init__(self, obs_dim, act_dim, hidden_dim=512, log_std_min=-20, log_std_max=1.0):
         super().__init__()
         self.net = MLP(obs_dim, 2 * act_dim, hidden_dim)
         self.log_std_min = log_std_min
@@ -191,10 +191,10 @@ def train_sac(args):
     q1_target.load_state_dict(q1.state_dict())
     q2_target.load_state_dict(q2.state_dict())
 
-    # Optimizer
-    policy_opt = optim.Adam(policy.parameters(), lr=3e-4)
-    q1_opt = optim.Adam(q1.parameters(), lr=3e-4)
-    q2_opt = optim.Adam(q2.parameters(), lr=3e-4)
+    # Optimizer (reduced LR for stability)
+    policy_opt = optim.Adam(policy.parameters(), lr=float(os.environ.get("POLICY_LR", 1e-4)))
+    q1_opt = optim.Adam(q1.parameters(), lr=float(os.environ.get("Q_LR", 1e-4)))
+    q2_opt = optim.Adam(q2.parameters(), lr=float(os.environ.get("Q_LR", 1e-4)))
 
     # Temperature alpha (entropy)
     log_alpha = torch.zeros(1, requires_grad=True, device=device)
@@ -205,6 +205,9 @@ def train_sac(args):
     batch_size = 256
     gamma = 0.99
     tau = 0.005
+
+    # Reward scaling (static): multiply environment reward before storing/learning
+    reward_scale = 0.01
 
     num_episodes = int(os.environ.get("TRAIN_EPISODES", "10000"))
     start_steps = int(os.environ.get("START_STEPS", "10000"))
@@ -300,9 +303,12 @@ def train_sac(args):
             s2, r, done, truncated, info = env.step(a)
             d = float(done or truncated)
 
-            buffer.push(s, a, r, s2, d)
+            # Apply reward scaling before storing and logging
+            r_scaled = float(r) * reward_scale
+
+            buffer.push(s, a, r_scaled, s2, d)
             s = s2
-            ep_reward += r
+            ep_reward += r_scaled
 
             # Update mạng sau khi đủ mẫu
             if len(buffer) > batch_size and global_step >= start_steps:
@@ -323,15 +329,19 @@ def train_sac(args):
                     q1_pred = q1(sa)
                     q2_pred = q2(sa)
 
-                    q1_loss = F.mse_loss(q1_pred, y)
-                    q2_loss = F.mse_loss(q2_pred, y)
+                    # Use Huber loss (Smooth L1) for robustness to large TD errors
+                    q1_loss = F.smooth_l1_loss(q1_pred, y)
+                    q2_loss = F.smooth_l1_loss(q2_pred, y)
 
                     q1_opt.zero_grad()
                     q1_loss.backward()
+                    # Clip gradients to avoid explosion
+                    torch.nn.utils.clip_grad_norm_(q1.parameters(), max_norm=1.0)
                     q1_opt.step()
 
                     q2_opt.zero_grad()
                     q2_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(q2.parameters(), max_norm=1.0)
                     q2_opt.step()
 
                     # --- Update policy ---
@@ -346,6 +356,7 @@ def train_sac(args):
 
                     policy_opt.zero_grad()
                     policy_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
                     policy_opt.step()
 
                     # Log losses & alpha to TensorBoard
