@@ -12,15 +12,16 @@
 #   R2: không vượt giới hạn khớp
 #   R3: tiến gần mục tiêu
 
+import time
 import numpy as np
 import pybullet as p
 import pybullet_data
 import gym
 from gym import spaces
-
 from function_robot.Robot6_observer import Robot6_observer
 from function_robot.Robot5_observer import Robot5_observer
-
+from Robot5 import Robot_5_Dof
+from Robot6 import Robot_6_Dof
 
 class Robot6SacEnv(gym.Env):
     """
@@ -38,9 +39,6 @@ class Robot6SacEnv(gym.Env):
         - a ∈ [-1, 1]^6
         - joint velocity = a * v_max
     """
-
-    metadata = {"render.modes": ["human"]}
-
     def __init__(self, use_gui: bool = False):
         super().__init__()
 
@@ -55,55 +53,126 @@ class Robot6SacEnv(gym.Env):
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -10)
 
+        # 1. Tần số robot thật (Bạn chọn 25Hz cho an toàn)
+        self.control_freq = 50.0 
+        # 2. Tần số vật lý PyBullet (Nên là bội số của 25)
+        # 200Hz là con số đẹp (đủ mịn cho va chạm, nhẹ cho CPU)
+        self.sim_freq = 200.0   
+        self.dt = 1.0 / self.sim_freq
+        p.setTimeStep(self.dt)
+        # 3. Tính số bước lặp (Substeps)
+        # Với sim=200Hz, control=25Hz => n_substeps = 8
+        # Nghĩa là: AI ra 1 quyết định -> Robot thực hiện trong 8 bước vật lý (40ms)
+        self.n_substeps = int(self.sim_freq / self.control_freq)
+        print(f"Setup: Control={self.control_freq}Hz | Sim={self.sim_freq}Hz | Substeps={self.n_substeps}")
+
         # Mặt phẳng
         self.plane_id = p.loadURDF("plane.urdf")
 
         # ===== Robot 6 bậc =====
-        self.robot6_id = p.loadURDF(
-            "./2_robot/URDF_file_2/urdf/6_Dof.urdf",
-            [0, 0, 0],
-            p.getQuaternionFromEuler([-np.pi / 2, 0, 0]),
-            useFixedBase=True,
+        # Robot 6 bậc
+        self.robot6 = Robot_6_Dof(
+            urdf_path="./2_robot/URDF_file_2/urdf/6_Dof.urdf",
+            base_position=[0, 0, 0],
+            base_orientation_euler=[-np.pi / 2, 0, 0],
+            use_fixed_base=True
         )
+
         self.robot6_tool_link = 5  # như trong Robot_6_Dof
 
         # ===== Robot 5 bậc =====
-        self.robot5_id = p.loadURDF(
-            "./2_robot/Robot/urdf/5_Dof.urdf",
-            [0, -0.75, 0],
-            p.getQuaternionFromEuler([-np.pi / 2, 0, 0]),
-            useFixedBase=True,
+        self.robot5 = Robot_5_Dof(
+            urdf_path="./2_robot/Robot/urdf/5_Dof.urdf",
+            base_position=[0, -0.75, 0],
+            base_orientation_euler=[-np.pi / 2, 0, 0],
+            use_fixed_base=True
         )
+
         self.robot5_tool_link = 4
+
+        # Quả cầu hiển thị mục tiêu
+        self.sphere_robot6 = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=p.createVisualShape(
+                p.GEOM_SPHERE,
+                radius=0.01,
+                rgbaColor=[1, 0, 0, 1]
+            ),
+            basePosition=[0, 0, 0]
+        )
+
+        # Quả cầu hiển thị mục tiêu
+        self.sphere_robot5 = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=p.createVisualShape(
+                p.GEOM_SPHERE,
+                radius=0.01,
+                rgbaColor=[0, 0, 1, 1]
+            ),
+            basePosition=[0, 0, 0]
+        )
+
+        self.workspace_data = np.array([0, 0, 0.2, 0.7]) # x, y, z, radius
+        # Quả cầu hiển thị mục tiêu
+        self.workspace = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=p.createVisualShape(
+                p.GEOM_SPHERE,
+                radius= self.workspace_data[3],
+                rgbaColor=[0, 1, 0, 0.2]
+            ),
+            basePosition=[self.workspace_data[0], self.workspace_data[1], self.workspace_data[2]]
+        )
+
+        # Tham số mô phỏng và điều khiển
+        self.vmax_robot6 = 0.05 # (m/s)
+        self.vmax_robot5 = 0.05  # (m/s)
+        # Target mặc định
+        self.Px_robot6 = 0.0
+        self.Py_robot6 = 0.0
+        self.Pz_robot6 = 0.0
+
+                # Target mặc định
+        self.Px_robot5 = 0.0
+        self.Py_robot5 = 0.0
+        self.Pz_robot5 = 0.0
+        # 0 - real time, 1 - non-real time
+        self.flag_mode_simulation = 1
+
 
         # Base offset (để cộng với kết quả từ observer)
         self.base6 = np.array([0.0, 0.0, 0.0])
         self.base5 = np.array([0.0, -0.75, 0.0])
 
-        # Thông số mô phỏng
-        self.dt = 1.0 / 240.0
-        self.max_steps = 300
+        # TODO: # max_steps se tuy thuoc vao tan so cua chuong trinh 
+        # Vì tần số lấy mẫu robot là 50hz -> 1 step tương ứng với 1/50 s. 
+        # Ta muốn mỗi lần di chuyển cho phép khoảng 20 - 30s -> 30/ (1/50) = 1500 step
+        self.max_steps = 1500
         self.step_count = 0
 
+        #### Các đại lượng để chuẩn hóa
         # Vận tốc khớp tối đa (rad/s)
-        self.v_max = np.pi / 4.0
+        self.v_max = np.pi / 5.0
+        self.q_norm = np.pi
+        self.pos_norm = 1 # khoang canh den goal
+        self.observe_range = 0.5 # khoang cach den vat can 
+        # self.
 
         # Ngưỡng an toàn / va chạm cho khoảng cách robot6–robot5
-        self.d_safe = 0.10   # 10 cm: bắt đầu phạt
-        self.d_coll = 0.03   # 3 cm: coi như va chạm
+        self.d_safe = 0.15   # 15 cm: bắt đầu phạt
+        self.d_coll = 0.05   # 5 cm: coi như va chạm
         # Bán kính "nhìn thấy" vật cản cho observer
-        self.observe_range = 0.25  # 25 cm
+        # self.observe_range = 0.25  # 25 cm
 
         # Ngưỡng hoàn thành mục tiêu
-        self.goal_tolerance = 0.01  # 1 cm
+        self.goal_tolerance = 0.05  # 5 cm
 
         # Mục tiêu (mm, sẽ convert sang m khi dùng)
         self.goal_mm = np.array([300.0, 0.0, 300.0])
-
         # ----- Giới hạn khớp cho R2 (bạn chỉnh theo robot thực nếu cần) -----
         # Giới hạn an toàn (rad)
         self.q_lim = np.array(
-            [np.pi / 2, np.pi / 2, np.pi / 2, np.pi, np.pi, np.pi]
+            [np.pi, np.pi, np.pi, np.pi, np.pi, np.pi]
         )
         # Giới hạn cơ khí tối đa (rad) để chuẩn hóa phạt
         self.q_max = np.array(
@@ -112,12 +181,12 @@ class Robot6SacEnv(gym.Env):
 
         # ----- Chuẩn hóa khoảng cách tới goal cho R3 -----
         # L_max: khoảng cách lớn nhất trong workspace (m)
-        self.L_max = 0.6
+        self.L_max = 0.7
 
         # ----- Trọng số reward -----
         self.k1 = 2.0   # tránh va chạm
         self.k2 = 1.0   # giới hạn khớp
-        self.k3 = 3.0   # tới đích
+        self.k3 = 2.0   # tới đích
         self.k4 = 0.05  # phạt hành động
 
         # ===== Gym spaces =====
@@ -131,20 +200,69 @@ class Robot6SacEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(obs_dim,), dtype=np.float32
         )
-
     # ======================================================================
     #                    CÁC HÀM TIỆN ÍCH CHO ENV
     # ======================================================================
 
-    def _get_joint_state_robot6(self):
-        joint_states = p.getJointStates(self.robot6_id, list(range(6)))
-        q = np.array([s[0] for s in joint_states], dtype=np.float32)
-        dq = np.array([s[1] for s in joint_states], dtype=np.float32)
-        return q, dq
+    # ------------------ Cài đặt target & mode ------------------ #
 
-    def _get_tool_pos_robot6(self):
-        pos, _ = p.getLinkState(self.robot6_id, self.robot6_tool_link)[0:2]
-        return np.array(pos, dtype=np.float32)  # (3,), đơn vị m
+    def set_target_robot6(self, Px, Py, Pz):
+        self.Px_robot6 = float(Px)/1000
+        self.Py_robot6 = float(Py)/1000
+        self.Pz_robot6 = float(Pz)/1000
+
+    def set_target_robot5(self, Px, Py, Pz):
+        self.Px_robot5 = float(Px)/1000
+        self.Py_robot5 = float(Py)/1000
+        self.Pz_robot5 = float(Pz)/1000
+
+    def draw_lines(self):
+            """
+            Vẽ các đường debug nối từ observer trên Robot 6 tới điểm gần nhất trên Robot 5.
+            - Màu ĐỎ: Vật cản nằm trong vùng quan sát (d < observe_range).
+            - Màu XANH: Vật cản nằm ngoài vùng quan sát.
+            """
+            # 1. Lấy trạng thái khớp hiện tại để tính toán vị trí các điểm
+            q6, _ = self._get_joint_state_robot6()
+            q5_states = p.getJointStates(self.robot5.robot_id, list(range(5)))
+            q5 = np.array([s[0] for s in q5_states], dtype=np.float32)
+
+            # 2. Tính toán tọa độ các điểm quan sát (Observer Points)
+            # pts6: Các điểm gắn trên thân Robot 6 (Sensor)
+            # pts5: Các điểm gắn trên thân Robot 5 (Obstacle)
+            # Lưu ý: Phải cộng thêm base offset như trong hàm _get_observer_features
+            pts6 = Robot6_observer(q6[0], q6[1], q6[2], q6[3], q6[4]) + self.base6
+            pts5 = Robot5_observer(q5[0], q5[1], q5[2], q5[3]) + self.base5
+
+            # 3. Duyệt qua từng điểm trên Robot 6 để vẽ đường
+            for p6 in pts6:
+                # Tính khoảng cách từ điểm p6 tới TẤT CẢ các điểm trên Robot 5
+                diffs = pts5 - p6
+                dists = np.linalg.norm(diffs, axis=1)
+                
+                # Tìm điểm gần nhất trên Robot 5
+                min_idx = np.argmin(dists)
+                d_min = dists[min_idx]
+                closest_pt5 = pts5[min_idx]
+
+                # 4. Xác định màu sắc dựa trên observe_range
+                if d_min < self.observe_range:
+                    # Nguy hiểm/Đang quan sát thấy -> Màu ĐỎ, nét đậm
+                    line_color = [1, 0, 0]
+                    line_width = 2.0
+                else:
+                    # An toàn/Ngoài tầm nhìn -> Màu XANH, nét mảnh
+                    line_color = [0, 1, 0]
+                    line_width = 1.0
+
+                # 5. Vẽ đường thẳng (UserDebugLine)
+                p.addUserDebugLine(
+                    lineFromXYZ=p6.tolist(),
+                    lineToXYZ=closest_pt5.tolist(),
+                    lineColorRGB=line_color,
+                    lineWidth=line_width,
+                    lifeTime=0  # 0 nghĩa là tồn tại cho đến khi bị xóa (bởi p.removeAllUserDebugItems)
+                )
 
     def _get_observer_features(self):
         """
@@ -155,12 +273,15 @@ class Robot6SacEnv(gym.Env):
             - d_list: list 5 khoảng cách từ mỗi observer của robot6 tới robot5 (m)
         """
         q6, _ = self._get_joint_state_robot6()
-        q5_states = p.getJointStates(self.robot5_id, list(range(5)))
+        q5_states = p.getJointStates(self.robot5.robot_id, list(range(5)))
         q5 = np.array([s[0] for s in q5_states], dtype=np.float32)
 
         # 5 điểm trên robot6, 7 điểm trên robot5 (từ 2 hàm observer)
         pts6 = Robot6_observer(q6[0], q6[1], q6[2], q6[3], q6[4]) + self.base6
         pts5 = Robot5_observer(q5[0], q5[1], q5[2], q5[3]) + self.base5
+
+        self.robot6.marker_points = pts6.copy()
+        self.robot5.marker_points = pts5.copy()
 
         features = []
         all_dists = []
@@ -201,6 +322,11 @@ class Robot6SacEnv(gym.Env):
             [float(d) for d in d_list],
         )
 
+    def _get_joint_state_robot6(self):
+        q = self.robot6.take_joint_position()
+        dq = self.robot6.take_joint_velocity()
+        return q, dq
+    
     def _get_obs(self):
         """
         Trả về:
@@ -210,13 +336,13 @@ class Robot6SacEnv(gym.Env):
             - q6: joint angle hiện tại (6,)
         """
         q6, dq6 = self._get_joint_state_robot6()
-        q6_norm = np.clip(q6 / np.pi, -1.0, 1.0)
+        q6_norm = np.clip(q6 / self.q_norm, -1.0, 1.0)
         dq6_norm = np.clip(dq6 / self.v_max, -1.0, 1.0)
 
-        tool_pos = self._get_tool_pos_robot6()       # m
+        tool_pos = p.getLinkState(bodyUniqueId=self.robot6.robot_id, linkIndex=self.robot6_tool_link)[0]
         goal = self.goal_mm / 1000.0                 # mm -> m
         e_pos = tool_pos - goal                      # m
-        e_pos_norm = np.clip(e_pos / 0.5, -1.0, 1.0) # workspace ≈ 0.5 m
+        e_pos_norm = np.clip(e_pos / self.pos_norm, -1.0, 1.0) # workspace ≈ 0.5 m
 
         obs_observer, d_min, d_list = self._get_observer_features()
 
@@ -281,68 +407,165 @@ class Robot6SacEnv(gym.Env):
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -10)
         self.plane_id = p.loadURDF("plane.urdf")
-
-        # Load lại robot 6
-        self.robot6_id = p.loadURDF(
-            "./2_robot/URDF_file_2/urdf/6_Dof.urdf",
-            [0, 0, 0],
-            p.getQuaternionFromEuler([-np.pi / 2, 0, 0]),
-            useFixedBase=True,
-        )
-
-        # Load lại robot 5
-        self.robot5_id = p.loadURDF(
-            "./2_robot/Robot/urdf/5_Dof.urdf",
-            [0, -0.75, 0],
-            p.getQuaternionFromEuler([-np.pi / 2, 0, 0]),
-            useFixedBase=True,
-        )
-
         self.step_count = 0
+
+        xbase_robot5 = self.base5[0]
+        ybase_robot5 = self.base5[1]
+        zbase_robot5 = self.base5[2]
+
+        self.robot6 = Robot_6_Dof(
+            urdf_path="./2_robot/URDF_file_2/urdf/6_Dof.urdf",
+            base_position=[0, 0, 0],
+            base_orientation_euler=[-np.pi / 2, 0, 0],
+            use_fixed_base=True
+        )
+        # ===== Robot 5 bậc =====
+        self.robot5 = Robot_5_Dof(
+            urdf_path="./2_robot/Robot/urdf/5_Dof.urdf",
+            base_position=[0, -0.75, 0],
+            base_orientation_euler=[-np.pi / 2, 0, 0],
+            use_fixed_base=True
+        )
+
+        # 1. Quả cầu mục tiêu Robot 6
+        self.sphere_robot6 = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=p.createVisualShape(
+                p.GEOM_SPHERE,
+                radius=0.01,  # Có thể giảm xuống 0.05 cho đỡ vướng mắt
+                rgbaColor=[1, 0, 0, 1] # Màu Đỏ
+            ),
+            basePosition=[0, 0, 0]
+        )
+
+        # 2. Quả cầu mục tiêu Robot 5
+        self.sphere_robot5 = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=p.createVisualShape(
+                p.GEOM_SPHERE,
+                radius=0.01,
+                rgbaColor=[0, 0, 1, 1] # Màu Xanh dương (cho khác robot 6)
+            ),
+            basePosition=[0, 0, 0]
+        )
+
+        # 3. Quả cầu Workspace (nếu cần hiển thị)
+        self.workspace = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=p.createVisualShape(
+                p.GEOM_SPHERE,
+                radius=self.workspace_data[3],
+                rgbaColor=[0, 1, 0, 0.2] # Xanh lá mờ
+            ),
+            basePosition=[self.workspace_data[0], self.workspace_data[1], self.workspace_data[2]]
+        )
 
         # Random góc khớp ban đầu cho robot6
         for i in range(6):
             q = np.random.uniform(-np.pi / 4, np.pi / 4)
-            p.resetJointState(self.robot6_id, i, q, 0.0)
+            p.resetJointState(self.robot6.robot_id, i, q, 0.0)
 
         # Robot5: để ở cấu hình 0 cho đơn giản (có thể random nếu muốn)
         for i in range(5):
-            p.resetJointState(self.robot5_id, i, 0.0, 0.0)
+            p.resetJointState(self.robot5.robot_id, i, 0.0, 0.0)
 
         # Random mục tiêu (mm) trong vùng làm việc hợp lý
-        self.goal_mm = np.array([
-            np.random.uniform(200, 350),   # x
-            np.random.uniform(-100, 100),  # y
-            np.random.uniform(250, 350),   # z
+        self.goal_robot6 = np.array([
+            np.random.uniform(-300, 300),   # x
+            np.random.uniform(-200, -400),  # y
+            np.random.uniform(250, 450),   # z
         ])
+
+        self.goal_mm = self.goal_robot6
+
+        self.goal_robot5 = np.array([
+            np.random.uniform(-300, 300),   # x
+            np.random.uniform(-200, -400),  # y
+            np.random.uniform(250, 450),   # z
+        ])
+
+        self.set_target_robot6(self.goal_robot6[0], self.goal_robot6[1], self.goal_robot6[2] )
+        self.set_target_robot5(self.goal_robot5[0], self.goal_robot5[1], self.goal_robot5[2] )
 
         obs, _, _, _ = self._get_obs()
         return obs, {}
 
     def step(self, action):
+        p.removeAllUserDebugItems()
         self.step_count += 1
-
         # Scale action -> joint velocity
         action = np.clip(action, -1.0, 1.0)
-        theta_dot = action * self.v_max
+        theta_dot_robot6 = action * self.v_max
+        self.robot6.set_joint_velocity(theta_dot_robot6)
+        
+        theta_dot_robot5 = [0, 0, 0, 0, 0]
+        self.robot5.set_joint_velocity(theta_dot_robot5)
 
-        # Gửi lệnh vận tốc cho robot6
-        for i in range(6):
-            p.setJointMotorControl2(
-                self.robot6_id,
-                i,
-                controlMode=p.VELOCITY_CONTROL,
-                targetVelocity=float(theta_dot[i]),
-                force=500,
-            )
+        # >>> Cập nhật vị trí 6 điểm quan sát trên link
+        self.robot6.update_link_markers()
+        self.robot5.update_link_markers()
+        self.draw_lines()
 
-        # Robot5: hiện tại cho đứng yên; bạn có thể thêm controller riêng nếu muốn
-        for _ in range(4):
+        # =============================================
+        # Điều khiển robot5 
+        # =============================================
+        # Lấy joint và wrap về [-pi, pi]
+        joint_position_robot5 = self.robot5.take_joint_position()
+        joint_position_robot5 = (joint_position_robot5 + np.pi) % (2 * np.pi) - np.pi
+
+        # Controller
+        theta_dot_robot5, pos_err_robot5, att_Rx_robot5, att_Rz_robot5 = self.robot5.get_theta_dot(
+            x_target=self.Px_robot5,
+            y_target=self.Py_robot5,
+            z_target=self.Pz_robot5,
+            vmax=self.vmax_robot5,
+            joint_position_local=joint_position_robot5
+        )
+
+        # Điều kiện dừng
+        if pos_err_robot5 < 0.05:
+            self.goal_robot5 = np.array([
+                np.random.uniform(-300, 300),   # x
+                np.random.uniform(-200, -400),  # y
+                np.random.uniform(250, 450),   # z
+            ])
+            self.set_target_robot5(self.goal_robot5[0], self.goal_robot5[1], self.goal_robot5[2] )
+
+        # Gửi lệnh vận tốc
+        self.robot5.set_joint_velocity(theta_dot_robot5)
+
+
+        # =============================================
+        # Điều khiển robot5 
+        # =============================================
+
+        # Duy trì lệnh đó trong suốt 40ms (8 bước sim)
+        for _ in range(self.n_substeps):
+            # trong 1 chu ky lenh, thuc hien n_substeps.
+            # Đây là môi trường mô phỏng, miễn tần số của chương trình và tần số robot chênh lệch là được. 
+            # Trong thực tế thì ta còn phải set đến thời gian nữa. 
             p.stepSimulation()
+            if self.use_gui:
+                # Sleep để mắt thường nhìn thấy đúng tốc độ thực (chỉ dùng khi debug)
+                time.sleep(self.dt)
+        # Cập nhật vị trí quả cầu mục tiêu
 
+        p.resetBasePositionAndOrientation(
+            self.sphere_robot5,
+            [self.Px_robot5, self.Py_robot5, self.Pz_robot5],
+            [0, 0, 0, 1]
+        )
+
+        # Cập nhật vị trí quả cầu mục tiêu
+        p.resetBasePositionAndOrientation(
+            self.sphere_robot6,
+            [self.Px_robot6, self.Py_robot6, self.Pz_robot6],
+            [0, 0, 0, 1]
+        )
+        
         # Lấy state + thông tin reward
         obs, d_min, d_list, q6 = self._get_obs()
-        tool_pos = self._get_tool_pos_robot6()
+        tool_pos = p.getLinkState(bodyUniqueId=self.robot6.robot_id, linkIndex=self.robot6_tool_link)[0]
         goal = self.goal_mm / 1000.0
         d_goal = float(np.linalg.norm(tool_pos - goal))
 
@@ -384,10 +607,6 @@ class Robot6SacEnv(gym.Env):
         }
         return obs, reward, terminated, truncated, info
 
-    def render(self):
-        # Nếu dùng GUI, PyBullet tự hiển thị
-        pass
-
     def close(self):
         p.disconnect()
 
@@ -399,12 +618,14 @@ if __name__ == "__main__":
     env = Robot6SacEnv(use_gui=True)
     obs, _ = env.reset()
     print("Obs dim:", obs.shape)
-
-    for _ in range(300):
-        a = env.action_space.sample()
-        obs, r, done, trunc, info = env.step(a)
-        if done or trunc:
-            print("Episode ended:", info)
-            obs, _ = env.reset()
+    i = 0 
+    for epoch in range(300):
+        while True: 
+            a = env.action_space.sample()
+            obs, r, done, trunc, info = env.step(a)
+            if done or trunc:
+                print("Episode ended:", info)
+                obs, _ = env.reset()
+                break
 
     env.close()

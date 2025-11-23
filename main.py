@@ -7,6 +7,7 @@ from Robot6 import Robot_6_Dof
 class Environment:
     def __init__(self, use_gui=True):
         """Khởi tạo PyBullet, mặt phẳng, robot và quả cầu target."""
+        """Đây là môi trường để sau này deploy chương trình"""
         self.use_gui = use_gui
 
         # Kết nối PyBullet
@@ -209,6 +210,7 @@ class Environment:
         self.robot6.update_link_markers()
         self.robot5.update_link_markers()
         self.draw_lines()
+        
         # Nếu non-real-time thì phải tự step
         if self.flag_mode_simulation == 1:
             p.stepSimulation()

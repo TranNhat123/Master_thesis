@@ -74,6 +74,16 @@ class Robot_6_Dof:
             positions.append(joint_value)
         return np.array(positions)
 
+    def take_joint_velocity(self): 
+        """Lấy vector vận tốc góc khớp hiện tại của robot 6 bậc."""
+        velocity = []
+        for i in range(6):
+            joint_value = p.getJointState(self.robot_id, i)[1]
+            if i == 4:
+                joint_value = -joint_value  # đổi dấu nếu là khớp số 4
+            velocity.append(joint_value)
+        return np.array(velocity)
+
     def set_joint_velocity(self, theta_v_sixdof):
         """Set vận tốc cho từng khớp robot 6 bậc."""
         for i in range(6):
@@ -99,7 +109,6 @@ class Robot_6_Dof:
         # Tọa độ đích (goal)
         goal = np.array([float(x_target), float(y_target), float(z_target)])
 
-        # (Có thể dùng nếu bạn cần) – hiện tại không dùng giá trị trả về
         self.jointpos = Coordinate_sixdof(t1, t2, t3, t4, t5)
         self.marker_points = Robot6_observer(t1, t2, t3, t4, t5)
         # Lấy vị trí tool từ PyBullet
