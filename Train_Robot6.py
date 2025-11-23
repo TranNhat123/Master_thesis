@@ -2,6 +2,7 @@
 import os
 import time
 import csv
+import glob
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,24 +12,28 @@ from collections import deque
 import random
 from torch.utils.tensorboard import SummaryWriter
 from Robot6_SAC import Robot6SacEnv
+import argparse
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 class MLP(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim=256):
+    def __init__(self, in_dim, out_dim, hidden_dim=512):
         super().__init__()
         self.fc1 = nn.Linear(in_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, out_dim)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc4 = nn.Linear(hidden_dim, out_dim)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        x = F.relu(self.fc3(x))
+        return self.fc4(x)
 
 
 class GaussianPolicy(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden_dim=256, log_std_min=-20, log_std_max=2):
+    def __init__(self, obs_dim, act_dim, hidden_dim=512, log_std_min=-20, log_std_max=2):
         super().__init__()
         self.net = MLP(obs_dim, 2 * act_dim, hidden_dim)
         self.log_std_min = log_std_min
@@ -53,7 +58,7 @@ class GaussianPolicy(nn.Module):
 
 
 class ReplayBuffer:
-    def __init__(self, capacity=1000000):
+    def __init__(self, capacity=1_000_000):
         self.buffer = deque(maxlen=capacity)
 
     def push(self, s, a, r, s2, d):
@@ -74,7 +79,106 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
-def train_sac():
+def find_latest_checkpoint(base_dir="checkpoints"):
+    """
+    Tìm checkpoint mới nhất trong:
+      checkpoints/*/latest.pth
+      checkpoints/*/ckpt_ep_*.pth
+    Trả về path hoặc None nếu không có.
+    """
+    patterns = [
+        os.path.join(base_dir, "*", "latest.pth"),
+        os.path.join(base_dir, "*", "ckpt_ep_*.pth"),
+    ]
+    ckpt_candidates = []
+    for p in patterns:
+        ckpt_candidates.extend(glob.glob(p))
+
+    if not ckpt_candidates:
+        return None
+
+    latest_ckpt = max(ckpt_candidates, key=os.path.getmtime)
+    return latest_ckpt
+
+
+def save_training_checkpoint(
+    ckpt_path,
+    policy,
+    q1,
+    q2,
+    q1_target,
+    q2_target,
+    policy_opt,
+    q1_opt,
+    q2_opt,
+    alpha_opt,
+    log_alpha,
+    global_step,
+    episode,
+    best_reward,
+):
+    ckpt = {
+        # Models
+        "policy_state": policy.state_dict(),
+        "q1_state": q1.state_dict(),
+        "q2_state": q2.state_dict(),
+        "q1_target_state": q1_target.state_dict(),
+        "q2_target_state": q2_target.state_dict(),
+        # Optimizers
+        "policy_opt": policy_opt.state_dict(),
+        "q1_opt": q1_opt.state_dict(),
+        "q2_opt": q2_opt.state_dict(),
+        "alpha_opt": alpha_opt.state_dict(),
+        # Alpha
+        "log_alpha": log_alpha.detach().cpu(),
+        # Training progress
+        "global_step": global_step,
+        "episode": episode,
+        "best_reward": best_reward,
+    }
+    torch.save(ckpt, ckpt_path)
+
+
+def load_training_checkpoint(
+    ckpt_path,
+    policy,
+    q1,
+    q2,
+    q1_target,
+    q2_target,
+    policy_opt,
+    q1_opt,
+    q2_opt,
+    alpha_opt,
+    log_alpha,
+):
+    ckpt = torch.load(ckpt_path, map_location=device)
+
+    policy.load_state_dict(ckpt["policy_state"])
+    q1.load_state_dict(ckpt["q1_state"])
+    q2.load_state_dict(ckpt["q2_state"])
+    q1_target.load_state_dict(ckpt["q1_target_state"])
+    q2_target.load_state_dict(ckpt["q2_target_state"])
+
+    policy_opt.load_state_dict(ckpt["policy_opt"])
+    q1_opt.load_state_dict(ckpt["q1_opt"])
+    q2_opt.load_state_dict(ckpt["q2_opt"])
+    alpha_opt.load_state_dict(ckpt["alpha_opt"])
+
+    # log_alpha
+    log_alpha.data.copy_(torch.tensor(ckpt["log_alpha"]).to(device))
+
+    global_step = int(ckpt.get("global_step", 0))
+    start_episode = int(ckpt.get("episode", -1)) + 1
+    best_reward = float(ckpt.get("best_reward", -float("inf")))
+    print(
+        f"Loaded checkpoint from {ckpt_path} "
+        f"(episode={start_episode-1}, global_step={global_step}, best_reward={best_reward:.2f})"
+    )
+    return global_step, start_episode, best_reward
+
+
+def train_sac(args):
     env = Robot6SacEnv(use_gui=False)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
@@ -103,14 +207,11 @@ def train_sac():
     gamma = 0.99
     tau = 0.005
 
-    num_episodes = int(os.environ.get("TRAIN_EPISODES", "1000"))
+    num_episodes = int(os.environ.get("TRAIN_EPISODES", "10000"))
     start_steps = int(os.environ.get("START_STEPS", "10000"))
     updates_per_step = int(os.environ.get("UPDATES_PER_STEP", "1"))
 
-    global_step = 0
     # ----------------- Logging & Checkpoint setup -----------------
-    # If RESUME=1, try to find the latest checkpoint and resume into that run folder
-    resume_flag = int(os.environ.get("RESUME", "0"))
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     run_name = f"sac_robot6_{timestamp}"
     log_dir = os.path.join("runs", run_name)
@@ -118,22 +219,34 @@ def train_sac():
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    # Try resume: find latest checkpoint file under checkpoints/*/best.pth or ckpt_ep_*.pth
+    # Parse resume flags
+    resume_flag = args.resume
+    resume_ckpt_path = args.resume_ckpt
+
     resume_ckpt = None
-    resume_run_dir = None
     if resume_flag == 1:
-        import glob
-        ckpt_candidates = glob.glob(os.path.join("checkpoints", "*", "best.pth"))
-        if not ckpt_candidates:
-            ckpt_candidates = glob.glob(os.path.join("checkpoints", "*", "ckpt_ep_*.pth"))
-        if ckpt_candidates:
-            ckpt_candidates = sorted(ckpt_candidates, key=os.path.getmtime)
-            resume_ckpt = ckpt_candidates[-1]
-            resume_run_dir = os.path.dirname(resume_ckpt)
-            # reuse run_name / dirs from checkpoint
-            run_name = os.path.basename(resume_run_dir)
-            log_dir = os.path.join("runs", run_name)
-            ckpt_dir = os.path.join("checkpoints", run_name)
+        if resume_ckpt_path:
+            # User chỉ định checkpoint cụ thể
+            if os.path.isfile(resume_ckpt_path):
+                resume_ckpt = resume_ckpt_path
+                print(f"[RESUME] Using specified checkpoint: {resume_ckpt}")
+            else:
+                print(f"[RESUME] Specified checkpoint not found: {resume_ckpt_path}")
+        else:
+            # Không chỉ checkpoint cụ thể -> tự tìm mới nhất
+            resume_ckpt = find_latest_checkpoint(base_dir="checkpoints")
+            if resume_ckpt is not None:
+                print(f"[RESUME] Using latest checkpoint: {resume_ckpt}")
+            else:
+                print("[RESUME] No checkpoint found, start from scratch.")
+
+    # Nếu có resume_ckpt -> dùng lại run_name / log_dir / ckpt_dir cũ
+    if resume_ckpt is not None:
+        resume_run_dir = os.path.dirname(resume_ckpt)
+        run_name = os.path.basename(resume_run_dir)
+        ckpt_dir = resume_run_dir
+        log_dir = os.path.join("runs", run_name)
+        os.makedirs(log_dir, exist_ok=True)
 
     writer = SummaryWriter(log_dir=log_dir)
 
@@ -146,46 +259,28 @@ def train_sac():
 
     save_freq_episodes = int(os.environ.get("SAVE_FREQ_EP", "50"))
     best_reward = -float("inf")
+    global_step = 0
     start_episode = 0
 
     # If we have a resume checkpoint, load states
     if resume_ckpt is not None:
-        print(f"Resuming from checkpoint: {resume_ckpt}")
-        ckpt = torch.load(resume_ckpt, map_location=device)
-        try:
-            policy.load_state_dict(ckpt['policy_state'])
-            q1.load_state_dict(ckpt['q1_state'])
-            q2.load_state_dict(ckpt['q2_state'])
-        except Exception:
-            print("Warning: checkpoint missing some model parts or incompatible.")
+        global_step, start_episode, best_reward = load_training_checkpoint(
+            resume_ckpt,
+            policy,
+            q1,
+            q2,
+            q1_target,
+            q2_target,
+            policy_opt,
+            q1_opt,
+            q2_opt,
+            alpha_opt,
+            log_alpha,
+        )
+        print(f"Resuming training from episode {start_episode}")
 
-        # optimizers may or may not be saved
-        try:
-            policy_opt.load_state_dict(ckpt['policy_opt'])
-            q1_opt.load_state_dict(ckpt['q1_opt'])
-            q2_opt.load_state_dict(ckpt['q2_opt'])
-            alpha_opt.load_state_dict(ckpt['alpha_opt'])
-        except Exception:
-            pass
-
-        # load log_alpha
-        if 'log_alpha' in ckpt:
-            try:
-                log_alpha.data.copy_(ckpt['log_alpha'].to(device))
-            except Exception:
-                try:
-                    log_alpha.data.copy_(torch.tensor(ckpt['log_alpha']).to(device))
-                except Exception:
-                    pass
-
-        if 'global_step' in ckpt:
-            global_step = int(ckpt['global_step'])
-        if 'episode' in ckpt:
-            start_episode = int(ckpt['episode']) + 1
-            print(f"Resuming from episode {start_episode}")
-
-
-    for ep in range(num_episodes):
+    # ----------------- Training loop -----------------
+    for ep in range(start_episode, num_episodes):
         s, _ = env.reset()
         ep_reward = 0.0
         done = False
@@ -204,7 +299,6 @@ def train_sac():
                     a = a_t.cpu().numpy()[0]
 
             s2, r, done, truncated, info = env.step(a)
-            # Treat truncated as terminal for learning targets as well
             d = float(done or truncated)
 
             buffer.push(s, a, r, s2, d)
@@ -214,13 +308,7 @@ def train_sac():
             # Update mạng sau khi đủ mẫu
             if len(buffer) > batch_size and global_step >= start_steps:
                 for _ in range(updates_per_step):
-                    (
-                        s_b,
-                        a_b,
-                        r_b,
-                        s2_b,
-                        d_b,
-                    ) = buffer.sample(batch_size)
+                    s_b, a_b, r_b, s2_b, d_b = buffer.sample(batch_size)
 
                     # --- Update Q ---
                     with torch.no_grad():
@@ -281,10 +369,9 @@ def train_sac():
                         for param, target_param in zip(q2.parameters(), q2_target.parameters()):
                             target_param.data.mul_(1 - tau)
                             target_param.data.add_(tau * param.data)
-
             # end updates
 
-        print(f"Episode {ep}, reward = {ep_reward:.2f}")
+        print(f"Episode {ep} / {num_episodes}, reward = {ep_reward:.2f}")
 
         # ----------------- Logging per-episode -----------------
         writer.add_scalar("episode/reward", ep_reward, ep)
@@ -292,41 +379,99 @@ def train_sac():
             w = csv.writer(f)
             w.writerow([ep, global_step, ep_reward])
 
-        # Save checkpoint periodically and save best
+        # --- Save latest training checkpoint (mỗi episode) ---
+        latest_ckpt_path = os.path.join(ckpt_dir, "latest.pth")
+        save_training_checkpoint(
+            latest_ckpt_path,
+            policy,
+            q1,
+            q2,
+            q1_target,
+            q2_target,
+            policy_opt,
+            q1_opt,
+            q2_opt,
+            alpha_opt,
+            log_alpha,
+            global_step,
+            ep,
+            best_reward,
+        )
+
+        # Save checkpoint theo chu kỳ và lưu best
         if (ep + 1) % save_freq_episodes == 0:
             ckpt_path = os.path.join(ckpt_dir, f"ckpt_ep_{ep+1}.pth")
-            torch.save({
-                'policy_state': policy.state_dict(),
-                'q1_state': q1.state_dict(),
-                'q2_state': q2.state_dict(),
-                'policy_opt': policy_opt.state_dict(),
-                'q1_opt': q1_opt.state_dict(),
-                'q2_opt': q2_opt.state_dict(),
-                'alpha_opt': alpha_opt.state_dict(),
-                'log_alpha': log_alpha.detach().cpu(),
-                'global_step': global_step,
-                'episode': ep,
-            }, ckpt_path)
-            print(f"Saved checkpoint: {ckpt_path}")
+            save_training_checkpoint(
+                ckpt_path,
+                policy,
+                q1,
+                q2,
+                q1_target,
+                q2_target,
+                policy_opt,
+                q1_opt,
+                q2_opt,
+                alpha_opt,
+                log_alpha,
+                global_step,
+                ep,
+                best_reward,
+            )
+            print(f"Saved training checkpoint: {ckpt_path}")
 
         if ep_reward > best_reward:
             best_reward = ep_reward
             best_path = os.path.join(ckpt_dir, "best.pth")
-            torch.save({
-                'policy_state': policy.state_dict(),
-                'q1_state': q1.state_dict(),
-                'q2_state': q2.state_dict(),
-                'log_alpha': log_alpha.detach().cpu(),
-                'global_step': global_step,
-                'episode': ep,
-            }, best_path)
+            # best.pth chỉ cần model cho inference
+            torch.save(
+                {
+                    "policy_state": policy.state_dict(),
+                    "q1_state": q1.state_dict(),
+                    "q2_state": q2.state_dict(),
+                    "log_alpha": log_alpha.detach().cpu(),
+                    "global_step": global_step,
+                    "episode": ep,
+                    "best_reward": best_reward,
+                },
+                best_path,
+            )
             print(f"Saved best checkpoint: {best_path} (reward={best_reward:.2f})")
 
-    # Close writer
     writer.close()
-
     env.close()
 
 
 if __name__ == "__main__":
-    train_sac()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--resume",
+        type=int,
+        default=0,
+        help="1: resume training from checkpoint, 0: train from scratch",
+    )
+    parser.add_argument(
+        "--resume-ckpt",
+        type=str,
+        default="",
+        help="Path to a specific training checkpoint (.pth) to resume from",
+    )
+    args = parser.parse_args()
+    train_sac(args)
+
+
+### 
+'''
+Train mới từ đầu:
+    python sac_robot6_train.py
+
+Resume tự động từ checkpoint mới nhất:
+    python sac_robot6_train.py --resume 1
+
+Resume từ 1 checkpoint cụ thể:
+    python sac_robot6_train.py --resume 1 --resume-ckpt checkpoints/sac_robot6_20251123-210000/ckpt_ep_200.pth
+
+
+Mở 1 terminal khác. 
+tensorboard --logdir runs
+Rồi mở trình duyệt vào http://localhost:6006.
+'''
