@@ -29,7 +29,7 @@ class Robot6SacEnv(gym.Env):
         p.setGravity(0, 0, -10)
 
         # Cấu hình tần số
-        self.control_freq = 50.0 
+        self.control_freq = 100.
         self.sim_freq = 200.0   
         self.dt = 1.0 / self.sim_freq
         p.setTimeStep(self.dt)
@@ -71,7 +71,7 @@ class Robot6SacEnv(gym.Env):
         self.base6 = np.array([0.0, 0.0, 0.0])
         self.base5 = np.array([0.0, -0.75, 0.0])
 
-        self.max_steps = 1500
+        self.max_steps = 3000 # 30s 
         self.step_count = 0
 
         # Tham số chuẩn hóa
