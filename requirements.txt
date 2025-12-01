@@ -1,6 +1,0 @@
-torch
-numpy
-gym
-pybullet
-tensorboard
-matplotlib
