@@ -71,7 +71,7 @@ class Robot6SacEnv(gym.Env):
         self.base6 = np.array([0.0, 0.0, 0.0])
         self.base5 = np.array([0.0, -0.75, 0.0])
 
-        self.max_steps = 3000 # 30s 
+        self.max_steps = 1500 # 30s 
         self.step_count = 0
 
         # Tham số chuẩn hóa
