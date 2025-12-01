@@ -135,9 +135,9 @@ class Robot_5_Dof:
         theta_v_sixdof = np.dot(np.linalg.pinv(Jtool_fivedof), c_tool.T)
 
         # Giới hạn tốc độ cho 5 khớp đầu
-        limit = np.pi / 10.0
+        self.vel_limit = np.pi / 20.0
         for i in range(5):
-            theta_v_sixdof[i] = np.clip(theta_v_sixdof[i], -limit, limit)
+            theta_v_sixdof[i] = np.clip(theta_v_sixdof[i], -self.vel_limit, self.vel_limit)
 
         # Ở code gốc: khớp 4 bị set 0, khớp 5,6 map lại
         theta_dot = np.array([

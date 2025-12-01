@@ -23,7 +23,8 @@ class Robot_6_Dof:
         self.att_position_max = 0.0
         self.att_Rx = 0.0
         self.att_Rz = 0.0
-
+        # Giới hạn tốc độ cho 5 khớp đầu
+        self.vel_limit = np.pi / 20.0
         # Góc khởi tạo cho robot 6 bậc
         initial_joint_angles = [0, np.pi / 2, 0, 0, 0, 0]
         for i, angle in enumerate(initial_joint_angles):
@@ -154,10 +155,8 @@ class Robot_6_Dof:
         # Tính tốc độ khớp bằng pseudo-inverse Jacobian
         theta_v_sixdof = np.dot(np.linalg.pinv(Jtool_sixdof), c_tool.T)
 
-        # Giới hạn tốc độ cho 5 khớp đầu
-        limit = np.pi / 10.0
         for i in range(5):
-            theta_v_sixdof[i] = np.clip(theta_v_sixdof[i], -limit, limit)
+            theta_v_sixdof[i] = np.clip(theta_v_sixdof[i], -self.vel_limit, self.vel_limit)
 
         # Ở code gốc: khớp 4 bị set 0, khớp 5,6 map lại
         theta_dot = np.array([
