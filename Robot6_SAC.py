@@ -29,7 +29,7 @@ class Robot6SacEnv(gym.Env):
         p.setGravity(0, 0, -10)
 
         # Cấu hình tần số
-        self.control_freq = 100.
+        self.control_freq = 100. 
         self.sim_freq = 200.0   
         self.dt = 1.0 / self.sim_freq
         p.setTimeStep(self.dt)
@@ -71,7 +71,7 @@ class Robot6SacEnv(gym.Env):
         self.base6 = np.array([0.0, 0.0, 0.0])
         self.base5 = np.array([0.0, -0.75, 0.0])
 
-        self.max_steps = 1500 # 30s 
+        self.max_steps = 3000 # 30s 
         self.step_count = 0
 
         # Tham số chuẩn hóa
@@ -252,6 +252,7 @@ class Robot6SacEnv(gym.Env):
         
         # 3. Pha trộn tín hiệu (Hybrid Mixing)
         u_rl_vel = u_rl_norm * self.v_max
+        # alpha càng lớn thì url càng mạnh, càng sử dụng nhiều url -> phạt càng nặng để tránh lạm dụng
         theta_dot_robot6 = (1 - alpha) * np.array(u_base_vel) + alpha * u_rl_vel
         theta_dot_robot6 = np.clip(theta_dot_robot6, -self.v_max, self.v_max)
 
